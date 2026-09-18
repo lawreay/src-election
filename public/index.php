@@ -46,7 +46,8 @@ try {
         View::redirect('/login');
     }
 
-    if (!$session->isLoggedIn() && $uri !== '/login') {
+    $publicVotingRoutes = ['/voting', '/voting/ballot', '/voting/success'];
+    if (!$session->isLoggedIn() && $uri !== '/login' && !in_array($uri, $publicVotingRoutes, true)) {
         View::redirect('/login');
     }
 
@@ -59,6 +60,27 @@ try {
     if ($uri === '/results') {
         $results = $electionService->getResults();
         include __DIR__ . '/../resources/views/results.php';
+        exit;
+    }
+
+    if ($uri === '/results/export') {
+        $results = $electionService->getResults();
+        if (!$results['visible']) {
+            http_response_code(403);
+            echo 'Results are not available until the election is closed.';
+            exit;
+        }
+
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="src-election-winners.csv"');
+        $output = fopen('php://output', 'w');
+        fputcsv($output, ['Position', 'Winner', 'Votes']);
+        foreach ($results['positions'] as $position) {
+            foreach ($position['winners'] as $winner) {
+                fputcsv($output, [$position['name'], $winner['first_name'] . ' ' . $winner['last_name'], (int) $winner['votes']]);
+            }
+        }
+        fclose($output);
         exit;
     }
 
@@ -132,6 +154,12 @@ try {
 
     if ($uri === '/election') {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (isset($_POST['delete_current'])) {
+                $result = $electionService->deleteCurrentElection();
+                $session->set($result['success'] ? 'flash_success' : 'flash_error', $result['message']);
+                View::redirect('/election');
+            }
+
             $status = strtoupper(trim((string) ($_POST['status'] ?? '')));
             $currentElection = $electionService->getCurrentElection();
             if ($status !== '' && $currentElection) {

@@ -7,6 +7,31 @@ use PDO;
 
 class ElectionService
 {
+    public function deleteCurrentElection(): array
+    {
+        $pdo = Database::getConnection();
+        $election = $this->getCurrentElection();
+        if (!$election) {
+            return ['success' => false, 'message' => 'There is no current election to delete.'];
+        }
+
+        $pdo->beginTransaction();
+        try {
+            $deleteVotes = $pdo->prepare('DELETE FROM ballot_votes WHERE ballot_id IN (SELECT id FROM ballots WHERE election_id = :election_id)');
+            $deleteVotes->execute([':election_id' => (int) $election['id']]);
+            $deleteBallots = $pdo->prepare('DELETE FROM ballots WHERE election_id = :election_id');
+            $deleteBallots->execute([':election_id' => (int) $election['id']]);
+            $deleteElection = $pdo->prepare('DELETE FROM elections WHERE id = :election_id');
+            $deleteElection->execute([':election_id' => (int) $election['id']]);
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            return ['success' => false, 'message' => 'The election could not be deleted.'];
+        }
+
+        return ['success' => true, 'message' => 'Current election deleted. Student and candidate records were kept.'];
+    }
+
     public function getResults(): array
     {
         $pdo = Database::getConnection();
@@ -39,6 +64,14 @@ class ElectionService
                 'name' => $position['name'],
                 'candidates' => $candidateStmt->fetchAll(),
             ];
+            $votes = array_map('intval', array_column($positions[count($positions) - 1]['candidates'], 'votes'));
+            $highest = $votes ? max($votes) : 0;
+            $positions[count($positions) - 1]['winners'] = $highest > 0
+                ? array_values(array_filter(
+                    $positions[count($positions) - 1]['candidates'],
+                    static fn (array $candidate): bool => (int) $candidate['votes'] === $highest
+                ))
+                : [];
         }
 
         $reconciliationStmt = $pdo->prepare('SELECT
