@@ -1,0 +1,5 @@
+<?php $pageTitle = 'Positions'; include __DIR__ . '/partials/header.php'; ?>
+<section class="page-heading"><div><p class="eyebrow">Election setup</p><h1>Positions</h1><p class="muted">Define the offices students will vote for.</p></div></section>
+<div class="panel narrow-panel"><form method="post" action="/positions" class="inline-form"><label>Position name<input type="text" name="position_name" placeholder="e.g. President" required></label><button class="button button-primary" type="submit">Add position</button></form></div>
+<div class="panel table-panel"><table><thead><tr><th>Order</th><th>Position</th><th>Status</th></tr></thead><tbody><?php foreach ($positions as $position): ?><tr><td><?= (int) $position['sort_order'] ?></td><td><?= htmlspecialchars($position['name'], ENT_QUOTES, 'UTF-8') ?></td><td><?= (int) $position['active'] === 1 ? 'Active' : 'Inactive' ?></td></tr><?php endforeach; ?><?php if (!$positions): ?><tr><td colspan="3" class="muted">No positions configured yet.</td></tr><?php endif; ?></tbody></table></div>
+<?php include __DIR__ . '/partials/footer.php'; ?>

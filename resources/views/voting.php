@@ -1,0 +1,3 @@
+<?php $pageTitle = 'Voting station'; include __DIR__ . '/partials/header.php'; ?>
+<section class="station-panel"><p class="eyebrow">Election station</p><h1>Verify a voter</h1><p class="muted">Confirm the student's identity physically before starting the private ballot.</p><form method="post" action="/voting" class="station-search"><label>Student number<input type="text" name="student_number" placeholder="NDC001" autocomplete="off" required autofocus></label><button class="button button-primary" type="submit">Find student</button></form></section>
+<?php include __DIR__ . '/partials/footer.php'; ?>

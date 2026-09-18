@@ -1,0 +1,67 @@
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_number TEXT NOT NULL UNIQUE,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    programme TEXT NOT NULL,
+    is_eligible INTEGER NOT NULL DEFAULT 1,
+    has_voted INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS elections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'DRAFT',
+    starts_at TEXT,
+    ends_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS positions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL,
+    position_id INTEGER NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (position_id) REFERENCES positions(id)
+);
+
+CREATE TABLE IF NOT EXISTS ballots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    election_id INTEGER NOT NULL,
+    ballot_uuid TEXT NOT NULL UNIQUE,
+    submitted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (election_id) REFERENCES elections(id)
+);
+
+CREATE TABLE IF NOT EXISTS ballot_votes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ballot_id INTEGER NOT NULL,
+    position_id INTEGER NOT NULL,
+    candidate_id INTEGER NOT NULL,
+    FOREIGN KEY (ballot_id) REFERENCES ballots(id),
+    FOREIGN KEY (position_id) REFERENCES positions(id),
+    FOREIGN KEY (candidate_id) REFERENCES candidates(id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    details TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
