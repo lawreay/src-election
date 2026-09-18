@@ -20,6 +20,7 @@ $messages = $messages ?? [];
             <a href="/positions">Positions</a>
             <a href="/candidates">Candidates</a>
             <a href="/election">Election</a>
+            <a href="/results">Results</a>
             <a class="nav-action" href="/voting">Voting station</a>
             <a href="/logout">Log out</a>
         </nav>

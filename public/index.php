@@ -56,6 +56,12 @@ try {
         exit;
     }
 
+    if ($uri === '/results') {
+        $results = $electionService->getResults();
+        include __DIR__ . '/../resources/views/results.php';
+        exit;
+    }
+
     if ($uri === '/students') {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $result = $studentImportService->createStudent(
@@ -188,7 +194,11 @@ try {
                 View::redirect('/voting/success');
             }
 
-            $session->set('flash_error', 'Ballot failed. The student may already have voted or the selection was invalid.');
+            $currentStatus = $election['status'] ?? 'UNKNOWN';
+            $errorMessage = $currentStatus !== 'OPEN'
+                ? 'Voting is not open yet. An administrator must open the election before ballots can be submitted.'
+                : 'Ballot failed. The student may already have voted or the selection was invalid.';
+            $session->set('flash_error', $errorMessage);
             View::redirect('/voting');
         }
 

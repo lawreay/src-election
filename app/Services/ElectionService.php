@@ -7,6 +7,139 @@ use PDO;
 
 class ElectionService
 {
+    public function getResults(): array
+    {
+        $pdo = Database::getConnection();
+        $election = $this->getCurrentElection();
+        if (!$election) {
+            return ['election' => null, 'visible' => false, 'positions' => [], 'reconciliation' => null];
+        }
+
+        $visible = in_array($election['status'], ['CLOSED', 'RESULTS_FINAL'], true);
+        if (!$visible) {
+            return ['election' => $election, 'visible' => false, 'positions' => [], 'reconciliation' => null];
+        }
+
+        $positionStmt = $pdo->query('SELECT id, name FROM positions WHERE active = 1 ORDER BY sort_order, id');
+        $candidateStmt = $pdo->prepare('SELECT c.id, s.first_name, s.last_name, COUNT(b.id) AS votes
+            FROM candidates c
+            JOIN students s ON s.id = c.student_id
+            LEFT JOIN ballot_votes bv ON bv.candidate_id = c.id
+            LEFT JOIN ballots b ON b.id = bv.ballot_id AND b.election_id = :election_id
+            WHERE c.position_id = :position_id AND c.active = 1
+            GROUP BY c.id, s.first_name, s.last_name
+            ORDER BY votes DESC, s.last_name, s.first_name');
+        $positions = [];
+        foreach ($positionStmt->fetchAll() as $position) {
+            $candidateStmt->execute([
+                ':election_id' => (int) $election['id'],
+                ':position_id' => (int) $position['id'],
+            ]);
+            $positions[] = [
+                'name' => $position['name'],
+                'candidates' => $candidateStmt->fetchAll(),
+            ];
+        }
+
+        $reconciliationStmt = $pdo->prepare('SELECT
+            (SELECT COUNT(*) FROM students WHERE is_eligible = 1 AND has_voted = 1) AS marked_voters,
+            (SELECT COUNT(*) FROM ballots WHERE election_id = :election_id) AS submitted_ballots');
+        $reconciliationStmt->execute([':election_id' => (int) $election['id']]);
+        $reconciliation = $reconciliationStmt->fetch();
+        $reconciliation['matches'] = (int) $reconciliation['marked_voters'] === (int) $reconciliation['submitted_ballots'];
+
+        return [
+            'election' => $election,
+            'visible' => true,
+            'positions' => $positions,
+            'reconciliation' => $reconciliation,
+        ];
+    }
+
+    public function importCandidateList(array $candidateList, string $programme = 'Not specified'): array
+    {
+        $pdo = Database::getConnection();
+        $studentStmt = $pdo->prepare('SELECT id FROM students WHERE first_name = :first_name AND last_name = :last_name LIMIT 1');
+        $positionStmt = $pdo->prepare('SELECT id FROM positions WHERE name = :name LIMIT 1');
+        $candidateStmt = $pdo->prepare('SELECT id FROM candidates WHERE student_id = :student_id AND position_id = :position_id LIMIT 1');
+        $createdStudentStmt = $pdo->prepare('INSERT INTO students (student_number, first_name, last_name, programme, is_eligible, has_voted, created_at, updated_at) VALUES (:student_number, :first_name, :last_name, :programme, 1, 0, datetime("now"), datetime("now"))');
+        $createdPositionStmt = $pdo->prepare('INSERT INTO positions (name, sort_order, active, created_at, updated_at) VALUES (:name, :sort_order, 1, datetime("now"), datetime("now"))');
+        $candidateInsertStmt = $pdo->prepare('INSERT INTO candidates (student_id, position_id, active, created_at, updated_at) VALUES (:student_id, :position_id, 1, datetime("now"), datetime("now"))');
+        $createdStudents = 0;
+        $createdPositions = 0;
+        $createdCandidates = 0;
+
+        $pdo->beginTransaction();
+        try {
+            foreach ($candidateList as $positionName => $names) {
+                $positionStmt->execute([':name' => $positionName]);
+                $positionId = $positionStmt->fetchColumn();
+                if (!$positionId) {
+                    $sortOrder = (int) $pdo->query('SELECT COALESCE(MAX(sort_order), 0) + 1 FROM positions')->fetchColumn();
+                    $createdPositionStmt->execute([':name' => $positionName, ':sort_order' => $sortOrder]);
+                    $positionId = (int) $pdo->lastInsertId();
+                    $createdPositions++;
+                }
+
+                foreach ($names as $name) {
+                    $parts = preg_split('/\s+/', trim($name), 2);
+                    $firstName = $parts[0] ?? '';
+                    $lastName = $parts[1] ?? '';
+                    if ($firstName === '' || $lastName === '') {
+                        continue;
+                    }
+
+                    $studentStmt->execute([':first_name' => $firstName, ':last_name' => $lastName]);
+                    $studentId = $studentStmt->fetchColumn();
+                    if (!$studentId) {
+                        $studentNumber = $this->generateStudentNumber($firstName, $lastName);
+                        $createdStudentStmt->execute([
+                            ':student_number' => $studentNumber,
+                            ':first_name' => $firstName,
+                            ':last_name' => $lastName,
+                            ':programme' => $programme,
+                        ]);
+                        $studentId = (int) $pdo->lastInsertId();
+                        $createdStudents++;
+                    }
+
+                    $candidateStmt->execute([':student_id' => $studentId, ':position_id' => $positionId]);
+                    if (!$candidateStmt->fetch()) {
+                        $candidateInsertStmt->execute([':student_id' => $studentId, ':position_id' => $positionId]);
+                        $createdCandidates++;
+                    }
+                }
+            }
+            $pdo->commit();
+        } catch (\Throwable $exception) {
+            $pdo->rollBack();
+            throw $exception;
+        }
+
+        return [
+            'students' => $createdStudents,
+            'positions' => $createdPositions,
+            'candidates' => $createdCandidates,
+        ];
+    }
+
+    private function generateStudentNumber(string $firstName, string $lastName): string
+    {
+        $firstLetters = strtoupper(preg_replace('/[^A-Za-z]/', '', $firstName));
+        $lastLetters = strtoupper(preg_replace('/[^A-Za-z]/', '', $lastName));
+        $base = str_pad('S' . substr($lastLetters, 0, 3) . substr($firstLetters, 0, 2), 6, 'X');
+        $exists = Database::getConnection()->prepare('SELECT id FROM students WHERE student_number = :student_number LIMIT 1');
+        for ($sequence = 1; $sequence <= 99; $sequence++) {
+            $candidate = $base . str_pad((string) $sequence, 2, '0', STR_PAD_LEFT);
+            $exists->execute([':student_number' => $candidate]);
+            if (!$exists->fetch()) {
+                return $candidate;
+            }
+        }
+
+        throw new \RuntimeException("Unable to generate a unique student ID for {$firstName} {$lastName}.");
+    }
+
     public function getCurrentElection(): ?array
     {
         $pdo = Database::getConnection();
